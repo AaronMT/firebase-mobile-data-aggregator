@@ -41,7 +41,8 @@ class Firebase:
     def __init__(self, project_id: str, filter_by_name: str) -> None:
         try:
             self.connection = FirebaseConn(project_id)
-            self.projects_client = self.connection.get_projects_client()
+            self.tool_results = self.connection.get_tool_results()
+            self.testing = self.connection.get_testing()
             self.projectId = project_id
             self.filterByName = filter_by_name
         except KeyError:
@@ -50,7 +51,7 @@ class Firebase:
 
     def get_histories(self) -> dict:
         """Get a list of (default: 20) histories sorted by modification time in descending order"""
-        histories = self.projects_client.projects().histories().list(
+        histories = self.tool_results.projects().histories().list(
             projectId=self.projectId,
             filterByName=self.filterByName
         ).execute()
@@ -58,7 +59,7 @@ class Firebase:
 
     def get_executions(self, history_id: str, page_token: str = None) -> dict:
         """Get a list of (default: 25) executions for a given project """
-        executions = self.projects_client.projects().histories().executions().list(
+        executions = self.tool_results.projects().histories().executions().list(
             projectId=self.projectId,
             historyId=history_id,
             pageSize=int(Paging.EXECUTIONS_PAGE_SIZE.value),
@@ -68,7 +69,7 @@ class Firebase:
 
     def get_execution(self, history_id: str, execution_id: int) -> dict:
         """Get a single execution"""
-        execution = self.projects_client.projects().histories().executions().get(
+        execution = self.tool_results.projects().histories().executions().get(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id
@@ -78,7 +79,7 @@ class Firebase:
     def get_steps(self, history_id: str, execution_id: int, page_size: int, page_token: str = None) -> dict:
         """Get a list of all steps (default: 25, max: 200 without page token) for a given execution
         sorted by creation time in descending order"""
-        steps = self.projects_client.projects().histories().executions().steps().list(
+        steps = self.tool_results.projects().histories().executions().steps().list(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
@@ -89,7 +90,7 @@ class Firebase:
 
     def get_step(self, history_id: str, execution_id: int, step_id: str) -> dict:
         """Get a single step"""
-        step = self.projects_client.projects().histories().executions().steps().get(
+        step = self.tool_results.projects().histories().executions().steps().get(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
@@ -99,7 +100,7 @@ class Firebase:
 
     def get_test_cases(self, history_id: str, execution_id: int, step_id: str, page_size: int) -> dict:
         """Get a list of test cases attached to a Step"""
-        test_cases = self.projects_client.projects().histories().executions().steps().testCases().list(
+        test_cases = self.tool_results.projects().histories().executions().steps().testCases().list(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
@@ -110,7 +111,7 @@ class Firebase:
 
     def get_test_case(self, history_id: str, execution_id: int, step_id: str, test_case_id: str) -> dict:
         """Get a single test case"""
-        test_case = self.projects_client.projects().histories().executions().steps().testCases().get(
+        test_case = self.tool_results.projects().histories().executions().steps().testCases().get(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
@@ -121,7 +122,7 @@ class Firebase:
 
     def get_environments(self, history_id: str, execution_id: int) -> dict:
         """Get the environments for a given execution"""
-        environments = self.projects_client.projects().histories().executions().environments().list(
+        environments = self.tool_results.projects().histories().executions().environments().list(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
@@ -129,13 +130,21 @@ class Firebase:
         return environments
 
     def get_environment(self, history_id: str, execution_id: int, environment_id: int) -> dict:
-        environment = self.projects_client.projects().histories().executions().environments().get(
+        environment = self.tool_results.projects().histories().executions().environments().get(
             projectId=self.projectId,
             historyId=history_id,
             executionId=execution_id,
             environmentId=environment_id
         ).execute()
         return environment
+
+    def get_test_matrix(self, test_matrix_id: str) -> dict:
+        """Get TestMatrix RESOURCE for a given {projectID} and {testMatrixId}"""
+        test_matrix = self.testing.projects().testMatrices().get(
+            projectId=self.projectId,
+            testMatrixId=test_matrix_id
+        ).execute()
+        return test_matrix
 
 
 class FirebaseHelper:
@@ -184,7 +193,11 @@ class FirebaseHelper:
             return True
         else:
             return False
-    
+
+    def get_test_matrix(self, test_matrix_id: str) -> dict:
+        """Get test matrix"""
+        return self.firebase.get_test_matrix(test_matrix_id)
+
     def get_test_case_results_by_execution_summary(self, execution_outcome_summary: str) -> dict:
         from datetime import datetime, timedelta
 
@@ -195,7 +208,6 @@ class FirebaseHelper:
             page_token=None
         )
         results = []
-
         for execution in executions['executions']:
             """Filter on complete immutable executions"""
             if self.check_for_execution_state(execution, 'complete'):
@@ -211,6 +223,10 @@ class FirebaseHelper:
                         history_id=history['historyId'],
                         execution_id=int(execution['executionId'])
                     )
+                    testMatrix = self.get_test_matrix(
+                        test_matrix_id=str(execution['testExecutionMatrixId'])
+                    )
+
                     for k, v in environments.items():
                         if k == 'environments':
                             for env in v:
@@ -231,20 +247,29 @@ class FirebaseHelper:
                                                                 if 'status' in case:
                                                                     if case['status'] == TestStatus.FAILED.value:
                                                                         results.append({
-                                                                                'testCase': [case['testCaseReference'] for case in cases['testCases']],
-                                                                                'testCaseResult': [case['status'] for case in cases['testCases']],
-                                                                                'matrix': execution['testExecutionMatrixId'],
-                                                                                'environmentSummary': [environment['environmentResult']['outcome']['summary'] for environment in environments['environments']],
-                                                                                'duration': [step['testExecutionStep']['testTiming']['testProcessDuration']['seconds']],
-                                                                                'creationTime': str(
+                                                                            'testCase': [case['testCaseReference']],
+                                                                            'testCaseResult': [case['status']],
+                                                                            'matrix': execution['testExecutionMatrixId'],
+                                                                            'environmentSummary': [environment['environmentResult']['outcome']['summary'] for environment in environments['environments']],
+                                                                            'duration': [step['testExecutionStep']['testTiming']['testProcessDuration']['seconds']],
+                                                                            'creationTime': str(
+                                                                                datetime.fromtimestamp(
+                                                                                    int(execution['creationTime']['seconds'])
+                                                                                ).strftime('%Y-%m-%d')
+                                                                            ),
+                                                                            'executionTime': int(
+                                                                                timedelta.total_seconds(
                                                                                     datetime.fromtimestamp(
-                                                                                        int(execution['creationTime']['seconds'])
-                                                                                    ).strftime('%Y-%m-%d')
+                                                                                        int(execution['completionTime']['seconds'])) -
+                                                                                    datetime.fromtimestamp(
+                                                                                        int(execution['creationTime']['seconds'])))
+                                                                                            / 60
                                                                                 ),
-                                                                                'withinPastDay': ((datetime.utcnow() - datetime.fromtimestamp(int(execution['creationTime']['seconds']))) > timedelta(days=1)),
-                                                                                #'testIssues': [[testIssues['type'] for testIssues in step['testExecutionStep']['testIssues']] if 'testIssues' in step['testExecutionStep'] else None]
-                                                                            }
-                                                                        )
+                                                                            'commit': [y['value'] for y in [x for x in testMatrix['clientInfo']['clientInfoDetails']] if 'commit' in y.values()],
+                                                                            'pullRequest': [y['value'] for y in [x for x in testMatrix['clientInfo']['clientInfoDetails']] if 'matrixLabel' in y.values()],
+                                                                            'withinPastDay': ((datetime.utcnow() - datetime.fromtimestamp(int(execution['creationTime']['seconds']))) > timedelta(days=1)),
+                                                                            #'testIssues': [[testIssues['type'] for testIssues in step['testExecutionStep']['testIssues']] if 'testIssues' in step['testExecutionStep'] else None]
+                                                                        })
                                                     # WIP Crashes
                                                     if 'failureDetail' in step['outcome']:
                                                         if (('crashed', True)) in step['outcome']['failureDetail'].items():
@@ -266,7 +291,7 @@ class FirebaseHelper:
 
     def get_recent_step_count_by_execution_summary(self, execution_outcome_summary: str) -> dict:
         from datetime import datetime, timedelta
-        
+
         """Get test case results from executions with a provided outcome summary"""
         history = next(iter([x for y in self.get_histories().values() for x in y]))
         executions = self.get_executions(
@@ -307,6 +332,45 @@ class FirebaseHelper:
                                         results.append(len(steps['steps']))
         return sum(results)
 
+    def get_recent_execution_times_by_execution_summary(self, execution_outcome_summary: str, specification: str) -> dict:
+        from datetime import datetime, timedelta
+
+        """Get test case results from executions with a provided outcome summary"""
+        history = next(iter([x for y in self.get_histories().values() for x in y]))
+        executions = self.get_executions(
+            history_id=history['historyId'],
+            page_token=None
+        )
+        results = []
+
+        for execution in executions['executions']:
+            # environments = self.get_environments(history_id=history['historyId'], execution_id=int(execution['executionId']))
+            # if len(environments['environments']) == 1:
+            #     print(environments)
+
+            """Filter on complete immutable executions"""
+            if self.check_for_execution_state(execution, 'complete'):
+                if 'specification' in execution and 'androidTest' in execution['specification']:
+                    if specification in execution['specification']['androidTest']:
+                        # testMatrix = self.get_test_matrix(test_matrix_id=str(execution['testExecutionMatrixId']))
+                        # clientDetails = [y['value'] for y in [x for x in testMatrix['clientInfo']['clientInfoDetails']] if 'matrixLabel' in y.values()]
+                        # if 'None' in clientDetails:
+                        """Executions with flaky tests (of multiple attempts) are treated as successful"""
+                        if execution['outcome']['summary'] == execution_outcome_summary:
+                            execution_minutes, execution_seconds = divmod(int(
+                                timedelta.total_seconds(
+                                    datetime.fromtimestamp(int(execution['completionTime']['seconds']))
+                                    - datetime.fromtimestamp(int(execution['creationTime']['seconds']))
+                                )
+                            ), 60)
+                            results.append({
+                                'matrix': execution['testExecutionMatrixId'],
+                                'matrixResult': execution['outcome']['summary'],
+                                'executionTime': f"{execution_minutes}m {execution_seconds}s"
+                            })                      
+
+        return results
+
     def post_recent_step_count_by_execution_summary(self, execution_outcome_summary: str) -> dict:
         self.generate_JSON(payload=(self.get_recent_step_count_by_execution_summary(execution_outcome_summary)))
 
@@ -315,6 +379,14 @@ class FirebaseHelper:
         if results:
             for result in results:
                 print(f"{result}")
+        else:
+            print(f"No results found for {execution_outcome_summary}")
+
+    def print_recent_execution_times_by_execution_summary(self, execution_outcome_summary: str, specification: str) -> None:
+        results = self.get_recent_execution_times_by_execution_summary(execution_outcome_summary, specification)
+        if results:
+            for result in results:
+                print(f"{result['executionTime']} minutes - {result['matrix']}")
         else:
             print(f"No results found for {execution_outcome_summary}")
 
@@ -338,8 +410,8 @@ class FirebaseHelper:
                             )
                             time_diff = ((datetime.utcnow() - dt_obj) > timedelta(days=1))
                             if not time_diff:
-                                candidates.append(execution)   
-                            #print(f"{dt_obj.strftime('%Y-%m-%d')} - {execution['testExecutionMatrixId']} - {'more than 24 hours have passed' if time_diff else None}")
+                                candidates.append(execution)
+                            print(f"{dt_obj.strftime('%Y-%m-%d')} - {execution['testExecutionMatrixId']} - {'more than 24 hours have passed' if time_diff else None}")
         return candidates
 
     def generate_JSON(self, payload: str) -> None:
@@ -350,8 +422,32 @@ class FirebaseHelper:
         }
         if payload:
             try:
-                 with open('payload.json', 'w') as outfile:
+                with open('payload.json', 'w') as outfile:
                     json.dump(payload, outfile, indent=4)
                     print('Output written to [{}]'.format(outfile.name), end='\n\n')
             except OSError as e:
                 raise SystemExit(e)
+
+    def get_pending_executions(self, specification: str) -> None:
+        from datetime import datetime
+        """Get test case results from executions with a provided outcome summary"""
+        history = next(iter([x for y in self.get_histories().values() for x in y]))
+        executions = self.get_executions(
+            history_id=history['historyId'],
+            page_token=None
+        )
+        results = []
+
+        for execution in executions['executions']:
+            """Filter on pending xecutions"""
+            if self.check_for_execution_state(execution, 'pending'):
+                if 'specification' in execution and 'androidTest' in execution['specification']:
+                    if specification in execution['specification']['androidTest']:
+                        dt = datetime.utcfromtimestamp(int(execution['creationTime']['seconds']))
+                        time_string = dt.strftime("%H:%M:%S")
+                        results.append({
+                            'matrix': execution['testExecutionMatrixId'],
+                            'state': execution['state'],
+                            'creationTimeUTC': time_string,
+                        })
+        [print(f"{result['matrix']} - {result['state']} - {result['creationTimeUTC']}") for result in results]

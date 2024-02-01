@@ -23,12 +23,19 @@ class FirebaseProjects(Enum):
 
 class FirebaseConn:
 
-    def get_projects_client(self):
-        return self.projects_client
+    def get_tool_results(self):
+        return self.tool_results
 
-    def set_project(self, credentials):
-        self.projects_client = googleapiclient.discovery.build(
+    def set_toolresults(self, credentials):
+        self.tool_results = googleapiclient.discovery.build(
             'toolresults', 'v1beta3', credentials=self.credentials)
+
+    def get_testing(self):
+        return self.testing
+
+    def set_testing(self, credentials):
+        self.testing = googleapiclient.discovery.build(
+            'testing', 'v1', credentials=self.credentials)
 
     def __init__(self, project) -> None:
         try:
@@ -36,18 +43,22 @@ class FirebaseConn:
                 gcloud_auth_moz_fenix = os.environ['GCLOUD_AUTH_MOZ_FENIX']
                 self.JSON_CREDENTIAL = json.loads(gcloud_auth_moz_fenix)
             elif project == FirebaseProjects.MOZ_FOCUS_ANDROID.value:
-                gcloud_auth_moz_focus_android = os.environ['GCLOUD_AUTH_MOZ_FOCUS_ANDROID']
+                gcloud_auth_moz_focus_android = os.environ[
+                    'GCLOUD_AUTH_MOZ_FOCUS_ANDROID']
                 self.JSON_CREDENTIAL = json.loads(
                     gcloud_auth_moz_focus_android)
             elif project == FirebaseProjects.MOZ_ANDROID_COMPONENTS.value:
-                gcloud_auth_moz_android_components = os.environ['GCLOUD_AUTH_MOZ_ANDROID_COMPONENTS']
+                gcloud_auth_moz_android_components = os.environ[
+                    'GCLOUD_AUTH_MOZ_ANDROID_COMPONENTS']
                 self.JSON_CREDENTIAL = json.loads(
                     gcloud_auth_moz_android_components)
         except KeyError:
-            raise Exception("Please set the GCLOUD_AUTH_MOZ_<project> auth environment variable.")
+            raise Exception("Please set the GCLOUD_AUTH_MOZ_<project> \
+                auth environment variable.")
 
         """Authenticate with Google API"""
         self.credentials = service_account.Credentials.from_service_account_info(
             self.JSON_CREDENTIAL)
 
-        self.set_project(self.credentials)
+        self.set_toolresults(self.credentials)
+        self.set_testing(self.credentials)

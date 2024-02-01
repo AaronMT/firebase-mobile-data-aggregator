@@ -113,8 +113,7 @@ def build_payload_content(type: str, dataset: dict) -> list:
                 {}
             ]
 
-
-def main():
+def construct_payload() -> dict:
     args = parse_args(sys.argv[1:])
     try:
         with open(args.input) as data_file:
@@ -136,12 +135,14 @@ def main():
                         ]
                     }
                 ]
-        post_to_slack(
-            {'blocks': header + divider + content + divider + footer}
-        )
+            return {'blocks': header + divider + content + divider + footer}
     except FileNotFoundError as e:
         print(e)
         sys.exit(1)
+
+
+def main():
+    post_to_slack(construct_payload())
 
 
 if __name__ == '__main__':

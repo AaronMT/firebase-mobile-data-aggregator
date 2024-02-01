@@ -6,6 +6,7 @@
 
 import argparse
 import sys
+from enum import Enum
 
 from firebase import ExecutionOutcome, FirebaseHelper
 
@@ -22,6 +23,11 @@ FILTER_NAME_PACKAGE = [
     'org.mozilla.focus.debug',
     'org.mozilla.focus.nightly'
 ]
+
+
+class AndroidTest(Enum):
+    ANDROID_INSTRUMENTATION_TEST = 'androidInstrumentationTest'
+    ANDROID_ROBO_TEST = 'androidRoboTest'
 
 
 def parse_args(cmdln_args):
@@ -53,14 +59,23 @@ def main():
     # FirebaseHelperClient.print_test_results_by_execution_summary(
     #     execution_outcome_summary=ExecutionOutcome.FAILURE.value
     # )
-    # FirebaseHelperClient.print_test_results_by_execution_summary(
-    #     execution_outcome_summary=ExecutionOutcome.INCONCLUSIVE.value
+    # FirebaseHelperClient.print_recent_execution_times_by_execution_summary(
+    #     execution_outcome_summary=ExecutionOutcome.SUCCESS.value,
+    #     specification=AndroidTest.ANDROID_INSTRUMENTATION_TEST.value
     # )
-    FirebaseHelperClient.post_recent_step_count_by_execution_summary(
+    # FirebaseHelperClient.print_recent_execution_times_by_execution_summary(
+    #     execution_outcome_summary=ExecutionOutcome.SUCCESS.value,
+    #     specification=AndroidTest.ANDROID_ROBO_TEST.value
+    # )
+    FirebaseHelperClient.print_test_results_by_execution_summary(
         execution_outcome_summary=ExecutionOutcome.SUCCESS.value
     )
-    # FirebaseHelperClient.get_executions_from_past_day_by_execution_summary(
-    #     ExecutionOutcome.SUCCESS.value)
+    # FirebaseHelperClient.post_recent_step_count_by_execution_summary(
+    #     execution_outcome_summary=ExecutionOutcome.SUCCESS.value
+    # )
+    # # FirebaseHelperClient.get_executions_from_past_day_by_execution_summary(
+    # #     ExecutionOutcome.SUCCESS.value)
+    # FirebaseHelperClient.get_pending_executions(specification=AndroidTest.ANDROID_INSTRUMENTATION_TEST.value)
 
 
 if __name__ == '__main__':
